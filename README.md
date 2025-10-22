@@ -1,1 +1,150 @@
 # BT_DTDM
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ứng dụng hiển thị ngẫu nhiên</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg,#e3f2fd,#bbdefb);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .toolbar {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      background: rgba(255,255,255,0.9);
+      padding: 10px 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+      align-items: center;
+    }
+
+    input {
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #90caf9;
+    }
+
+    button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+      color: white;
+    }
+
+    #btnAdd { background-color: #0078D4; }
+    #btnShow { background-color: #4CAF50; }
+    #btnClear { background-color: #f44336; }
+
+    .hello {
+      position: fixed;
+      font-weight: bold;
+      color: #1976d2;
+      border: 2px solid #1976d2;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.8);
+      padding: 6px 10px;
+      animation: fadeIn 0.3s ease-in;
+    }
+
+    @keyframes fadeIn {
+      from { transform: scale(0.5); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <input id="messageInput" type="text" placeholder="Nhập gì đó..." />
+    <button id="btnAdd">Thêm</button>
+    <button id="btnShow">Hiển thị ngẫu nhiên</button>
+    <button id="btnClear">Xóa tất cả</button>
+  </div>
+
+  <script>
+    const input = document.getElementById('messageInput');
+    const btnAdd = document.getElementById('btnAdd');
+    const btnShow = document.getElementById('btnShow');
+    const btnClear = document.getElementById('btnClear');
+
+    // ➕ Gửi dữ liệu lên server (API /api/add)
+    btnAdd.onclick = async () => {
+      const msg = input.value.trim();
+      if (msg === "") {
+        alert("Vui lòng nhập nội dung!");
+        return;
+      }
+
+      try {
+        const res = await fetch("/api/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: msg })
+        });
+        const data = await res.json();
+        if (data.success) alert("Đã thêm vào cơ sở dữ liệu!");
+        else alert("Lỗi thêm dữ liệu!");
+        input.value = "";
+      } catch (err) {
+        console.error(err);
+        alert("Không thể kết nối server!");
+      }
+    };
+
+    // 🎲 Lấy ngẫu nhiên 1 dòng từ server (API /api/random)
+    btnShow.onclick = async () => {
+      try {
+        const res = await fetch("/api/random");
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || "Không có dữ liệu!");
+          return;
+        }
+
+        const el = document.createElement("div");
+        el.className = "hello";
+        el.textContent = data.message;
+
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+
+        el.style.left = Math.random() * (vw - 120) + "px";
+        el.style.top = Math.random() * (vh - 60) + "px";
+
+        document.body.appendChild(el);
+      } catch (err) {
+        alert("Không thể kết nối server!");
+      }
+    };
+
+    // ❌ Xóa toàn bộ (API /api/clear)
+    btnClear.onclick = async () => {
+      if (!confirm("Bạn có chắc muốn xóa tất cả dữ liệu?")) return;
+      try {
+        const res = await fetch("/api/clear", { method: "DELETE" });
+        const data = await res.json();
+        if (data.success) {
+          document.querySelectorAll(".hello").forEach(e => e.remove());
+          alert("🗑️ Đã xóa tất cả dữ liệu!");
+        } else {
+          alert("Lỗi xóa dữ liệu!");
+        }
+      } catch (err) {
+        alert("Không thể kết nối server!");
+      }
+    };
+  </script>
+
+</body>
+</html>
