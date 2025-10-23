@@ -1,47 +1,86 @@
-from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS
-import sqlite3, random, os
+import os
+import logging
+from flask import Flask, render_template, jsonify, request
+import pyodbc
 
-app=Flask(__name__)
-CORS(app)
-DB='data.db'
-if not os.path.exists(DB):
-    conn=sqlite3.connect(DB)
-    conn.execute("CREATE TABLE Greetings(id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)")
-    conn.commit()
-    conn.close()
+app = Flask(__name__)
+logging.basicConfig(level=logging.INFO)
 
-def query(q, params=()):
-    conn=sqlite3.connect(DB)
-    cur=conn.cursor()
-    cur.execute(q, params)
-    rows=cur.fetchall()
-    conn.commit()
-    conn.close()
-    return rows
+DB_SERVER = os.getenv("DB_SERVER", "")
+DB_NAME = os.getenv("DB_NAME", "")
+DB_USER = os.getenv("DB_USER", "")
+DB_PASS = os.getenv("DB_PASS", "")
+DB_DRIVER = os.getenv("DB_DRIVER", "{ODBC Driver 18 for SQL Server}")
 
-@app.route('/')
-def ui():
-    return send_file('index.html')
+def get_conn():
+    if not all([DB_SERVER, DB_NAME, DB_USER, DB_PASS]):
+        raise RuntimeError("Database configuration is incomplete")
+    conn_str = (
+        f"DRIVER={DB_DRIVER};"
+        f"SERVER={DB_SERVER};"
+        f"DATABASE={DB_NAME};"
+        f"UID={DB_USER};"
+        f"PWD={DB_PASS};"
+        "Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+    )
+    return pyodbc.connect(conn_str)
 
 @app.route('/api/add', methods=['POST'])
 def add():
-    j=request.get_json() or {}
-    msg=j.get('message')
-    if not msg: return jsonify({'error':'no message'}),400
-    query("INSERT INTO Greetings(message) VALUES(?)",(msg,))
-    return jsonify({'success':True})
+    payload = request.get_json(silent=True)
+    msg = payload.get("message") if payload else None
+    if not msg:
+        return jsonify({"error": "Thiếu nội dung"}), 400
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("INSERT INTO Greetings (message) VALUES (?)", (msg,))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True}), 201
+    except Exception as e:
+        app.logger.exception("Insert failed")
+        return jsonify({"error": "Internal server error"}), 500
 
-@app.route('/api/random')
-def random_msg():
-    rows=query("SELECT message FROM Greetings")
-    if not rows: return jsonify({'error':'empty'}),404
-    return jsonify({'message':random.choice(rows)[0]})
+@app.route("/api/random")
+def random_hello():
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT TOP 1 message FROM Greetings ORDER BY NEWID()")
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return jsonify({"message": None}), 204
+        return jsonify({"message": row[0]}), 200
+    except Exception as e:
+        app.logger.exception("Fetch failed")
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.route('/api/clear', methods=['DELETE'])
 def clear():
-    query("DELETE FROM Greetings")
-    return jsonify({'success':True})
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM Greetings")
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({"success": True}), 200
+    except Exception as e:
+        app.logger.exception("Clear failed")
+        return jsonify({"error": "Internal server error"}), 500
 
-if __name__=='__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT',5000)))
+@app.errorhandler(404)
+def page_not_found(error):
+    return render_template("404.html"), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    return render_template("500.html"), 500
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
