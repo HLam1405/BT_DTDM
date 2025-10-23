@@ -1,20 +1,11 @@
-from flask import Flask, request, render_template, jsonify
-import sqlite3
+from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 import random
 
 app = Flask(__name__)
+CORS(app)  
 
-def init_db():
-    conn = sqlite3.connect('messages.db')
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message TEXT NOT NULL
-        )
-    ''')
-    conn.close()
-
-init_db()
+messages = []
 
 @app.route('/')
 def home():
@@ -22,43 +13,24 @@ def home():
 
 @app.route('/api/add', methods=['POST'])
 def add_message():
-    data = request.get_json(silent=True)
-    msg = ''
-    if data and 'message' in data:
-        msg = data['message'].strip()
-    else:
-        msg = request.form.get('message', '').strip()
-
-    if not msg:
-        return jsonify({'status': 'error', 'message': 'No message provided'}), 400
-
-    conn = sqlite3.connect('messages.db')
-    conn.execute("INSERT INTO messages (message) VALUES (?)", (msg,))
-    conn.commit()
-    conn.close()
-
-    return jsonify({'status': 'ok', 'message': 'Message added!'}), 200
+    data = request.get_json()
+    msg = data.get('message', '').strip()
+    if msg:
+        messages.append(msg)
+        return jsonify({"status": "ok"}), 200
+    return jsonify({"status": "error", "message": "No message provided"}), 400
 
 @app.route('/api/random', methods=['GET'])
 def random_message():
-    conn = sqlite3.connect('messages.db')
-    cursor = conn.execute("SELECT message FROM messages")
-    all_messages = [row[0] for row in cursor.fetchall()]
-    conn.close()
-
-    if not all_messages:
-        return jsonify({'status': 'error', 'message': ''}), 200
-
-    msg = random.choice(all_messages)
-    return jsonify({'status': 'ok', 'message': msg}), 200
+    if not messages:
+        return jsonify({"status": "error", "message": ""}), 200
+    msg = random.choice(messages)
+    return jsonify({"status": "ok", "message": msg}), 200
 
 @app.route('/api/clear', methods=['DELETE'])
 def clear_messages():
-    conn = sqlite3.connect('messages.db')
-    conn.execute("DELETE FROM messages")
-    conn.commit()
-    conn.close()
-    return jsonify({'status': 'ok', 'message': 'All messages cleared!'}), 200
+    messages.clear()
+    return jsonify({"status": "ok"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000, debug=True)
